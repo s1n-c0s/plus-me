@@ -20,6 +20,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { saveBlockOrder } from "@/app/actions/blocks"; // สมมติว่าสร้างไฟล์ action นี้ตามคำแนะนำก่อนหน้า
 
 interface BentoBlock {
   id: string;
@@ -32,6 +33,7 @@ interface BentoBlock {
 export function BentoLoginAdmin() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
@@ -92,6 +94,28 @@ export function BentoLoginAdmin() {
     }
   };
 
+  const handleSaveLayout = async () => {
+    setIsSaving(true);
+    const orderData = blocks.map((block, index) => ({
+      id: block.id,
+      order: index + 1,
+    }));
+
+    try {
+      const result = await saveBlockOrder(orderData);
+      if (result.success) {
+        alert("Layout saved successfully!");
+      } else {
+        alert("Error saving layout");
+      }
+    } catch (error) {
+      console.error("Save error:", error);
+      alert("Failed to connect to the server");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const moveBlock = (index: number, direction: "up" | "down") => {
     if (!isAdmin) return;
 
@@ -101,15 +125,15 @@ export function BentoLoginAdmin() {
 
       if (swapIndex < 0 || swapIndex >= newBlocks.length) return prev;
 
-      const tempOrder = newBlocks[index].order;
-      newBlocks[index].order = newBlocks[swapIndex].order;
-      newBlocks[swapIndex].order = tempOrder;
+      // สลับตำแหน่งใน Array
+      const temp = newBlocks[index];
+      newBlocks[index] = newBlocks[swapIndex];
+      newBlocks[swapIndex] = temp;
 
-      return newBlocks.sort((a, b) => a.order - b.order);
+      // อัปเดตค่า order ให้ตรงกับตำแหน่งใหม่
+      return newBlocks.map((block, i) => ({ ...block, order: i + 1 }));
     });
   };
-
-  const sortedBlocks = [...blocks].sort((a, b) => a.order - b.order);
 
   return (
     <div className="container mx-auto p-6 max-w-6xl">
@@ -118,82 +142,95 @@ export function BentoLoginAdmin() {
           <h1 className="text-3xl font-bold">Dashboard</h1>
           <p className="text-muted-foreground">
             {isAdmin
-              ? "Admin Mode - You can reorder blocks"
+              ? "Admin Mode - You can reorder blocks and save changes"
               : "View Mode - Login to organize"}
           </p>
         </div>
 
-        {isAdmin ? (
-          <Button variant="outline" onClick={() => setIsAdmin(false)}>
-            Logout
-          </Button>
-        ) : (
-          <Dialog open={loginOpen} onOpenChange={setLoginOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  className="mr-2"
-                >
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                  <circle cx="12" cy="7" r="4" />
-                </svg>
-                Login as Admin
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>Admin Login</DialogTitle>
-                <DialogDescription>
-                  Sign in to organize and reorder dashboard blocks
-                </DialogDescription>
-              </DialogHeader>
-              <form onSubmit={handleLogin} className="space-y-4 pt-4">
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="admin@example.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="password">Password</Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                  />
-                </div>
-                <Button type="submit" className="w-full">
-                  Login to Organize
+        <div className="flex gap-2">
+          {isAdmin && (
+            <Button
+              variant="default"
+              onClick={handleSaveLayout}
+              disabled={isSaving}
+              className="bg-green-600 hover:bg-green-700 text-white"
+            >
+              {isSaving ? "Saving..." : "Save Layout"}
+            </Button>
+          )}
+
+          {isAdmin ? (
+            <Button variant="outline" onClick={() => setIsAdmin(false)}>
+              Logout
+            </Button>
+          ) : (
+            <Dialog open={loginOpen} onOpenChange={setLoginOpen}>
+              <DialogTrigger asChild>
+                <Button>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    className="mr-2"
+                  >
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                    <circle cx="12" cy="7" r="4" />
+                  </svg>
+                  Login as Admin
                 </Button>
-                <p className="text-xs text-center text-muted-foreground">
-                  Default: admin@example.com / admin123
-                </p>
-              </form>
-            </DialogContent>
-          </Dialog>
-        )}
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Admin Login</DialogTitle>
+                  <DialogDescription>
+                    Sign in to organize and reorder dashboard blocks
+                  </DialogDescription>
+                </DialogHeader>
+                <form onSubmit={handleLogin} className="space-y-4 pt-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="email">Email</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="admin@example.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="password">Password</Label>
+                    <Input
+                      id="password"
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <Button type="submit" className="w-full">
+                    Login to Organize
+                  </Button>
+                  <p className="text-xs text-center text-muted-foreground">
+                    Default: admin@example.com / admin123
+                  </p>
+                </form>
+              </DialogContent>
+            </Dialog>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {sortedBlocks.map((block, index) => (
+        {blocks.map((block, index) => (
           <Card
             key={block.id}
             className={`relative group transition-all duration-200 ${block.color} ${
-              isAdmin ? "cursor-move hover:shadow-lg" : ""
+              isAdmin ? "cursor-move hover:shadow-lg border-2" : ""
             }`}
           >
             <CardHeader>
@@ -206,7 +243,7 @@ export function BentoLoginAdmin() {
                 </div>
                 {isAdmin && (
                   <span className="text-xs font-mono bg-background/50 px-2 py-1 rounded">
-                    #{block.order}
+                    Pos: {block.order}
                   </span>
                 )}
               </div>
@@ -215,7 +252,7 @@ export function BentoLoginAdmin() {
             {isAdmin && (
               <CardFooter className="flex justify-end gap-1 pt-0 opacity-0 group-hover:opacity-100 transition-opacity">
                 <Button
-                  variant="ghost"
+                  variant="secondary"
                   size="sm"
                   onClick={() => moveBlock(index, "up")}
                   disabled={index === 0}
@@ -223,10 +260,10 @@ export function BentoLoginAdmin() {
                   ↑
                 </Button>
                 <Button
-                  variant="ghost"
+                  variant="secondary"
                   size="sm"
                   onClick={() => moveBlock(index, "down")}
-                  disabled={index === sortedBlocks.length - 1}
+                  disabled={index === blocks.length - 1}
                 >
                   ↓
                 </Button>
@@ -238,7 +275,8 @@ export function BentoLoginAdmin() {
 
       {!isAdmin && (
         <div className="mt-8 p-4 bg-muted rounded-lg text-center text-sm text-muted-foreground">
-          Click &quot;Login as Admin&quot; to unlock reordering capabilities
+          Click &quot;Login as Admin&quot; to unlock reordering and saving
+          capabilities
         </div>
       )}
     </div>
