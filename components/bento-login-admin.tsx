@@ -1,7 +1,7 @@
 // components/bento-login-admin.tsx
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo, memo } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -20,6 +20,25 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+} from "@dnd-kit/sortable";
+import {
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { GripVertical } from "lucide-react";
 import { saveBlockOrder } from "@/app/actions/blocks"; // สมมติว่าสร้างไฟล์ action นี้ตามคำแนะนำก่อนหน้า
 
 interface BentoBlock {
@@ -29,6 +48,58 @@ interface BentoBlock {
   order: number;
   color: string;
 }
+
+const SortableBlock = memo(function SortableBlock({ block }: { block: BentoBlock }) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: block.id,
+    transition: {
+      duration: 150,
+      easing: 'cubic-bezier(0.25, 0.1, 0.25, 1)',
+    },
+  });
+
+  const style = useMemo(() => ({
+    transform: transform ? CSS.Transform.toString(transform) : undefined,
+    transition,
+    zIndex: isDragging ? 50 : undefined,
+  }), [transform, transition, isDragging]);
+
+  return (
+    <Card
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      className={`relative group cursor-grab active:cursor-grabbing ${isDragging ? 'opacity-50 shadow-2xl border-2 border-primary' : ''} ${block.color}`}
+    >
+      <CardHeader>
+        <div className="flex items-start justify-between">
+          <div className="flex-1">
+            <CardTitle className="text-lg">{block.title}</CardTitle>
+            <CardDescription className="mt-1.5">
+              {block.description}
+            </CardDescription>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="p-1">
+              <GripVertical className="h-4 w-4 text-muted-foreground" />
+            </div>
+            <span className="text-xs font-mono bg-background/50 px-2 py-1 rounded">
+              Pos: {block.order}
+            </span>
+          </div>
+        </div>
+      </CardHeader>
+    </Card>
+  );
+});
 
 export function BentoLoginAdmin() {
   const [isAdmin, setIsAdmin] = useState(false);
@@ -116,23 +187,29 @@ export function BentoLoginAdmin() {
     }
   };
 
-  const moveBlock = (index: number, direction: "up" | "down") => {
-    if (!isAdmin) return;
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
-    setBlocks((prev) => {
-      const newBlocks = [...prev];
-      const swapIndex = direction === "up" ? index - 1 : index + 1;
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
 
-      if (swapIndex < 0 || swapIndex >= newBlocks.length) return prev;
+    if (active.id !== over?.id && over) {
+      const oldIndex = blocks.findIndex((block) => block.id === active.id);
+      const newIndex = blocks.findIndex((block) => block.id === over.id);
 
-      // สลับตำแหน่งใน Array
-      const temp = newBlocks[index];
-      newBlocks[index] = newBlocks[swapIndex];
-      newBlocks[swapIndex] = temp;
-
-      // อัปเดตค่า order ให้ตรงกับตำแหน่งใหม่
-      return newBlocks.map((block, i) => ({ ...block, order: i + 1 }));
-    });
+      setBlocks((prevBlocks) => {
+        const newBlocks = arrayMove(prevBlocks, oldIndex, newIndex);
+        return newBlocks.map((block, i) => ({ ...block, order: i + 1 }));
+      });
+    }
   };
 
   return (
@@ -225,53 +302,44 @@ export function BentoLoginAdmin() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {blocks.map((block, index) => (
-          <Card
-            key={block.id}
-            className={`relative group transition-all duration-200 ${block.color} ${
-              isAdmin ? "cursor-move hover:shadow-lg border-2" : ""
-            }`}
-          >
-            <CardHeader>
-              <div className="flex items-start justify-between">
-                <div>
-                  <CardTitle className="text-lg">{block.title}</CardTitle>
-                  <CardDescription className="mt-1.5">
-                    {block.description}
-                  </CardDescription>
-                </div>
-                {isAdmin && (
+      {isAdmin ? (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext items={blocks.map(block => block.id)}>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {blocks.map((block) => (
+                <SortableBlock key={block.id} block={block} />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {blocks.map((block) => (
+            <Card
+              key={block.id}
+              className={`relative group transition-all duration-200 ${block.color}`}
+            >
+              <CardHeader>
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <CardTitle className="text-lg">{block.title}</CardTitle>
+                    <CardDescription className="mt-1.5">
+                      {block.description}
+                    </CardDescription>
+                  </div>
                   <span className="text-xs font-mono bg-background/50 px-2 py-1 rounded">
                     Pos: {block.order}
                   </span>
-                )}
-              </div>
-            </CardHeader>
-
-            {isAdmin && (
-              <CardFooter className="flex justify-end gap-1 pt-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => moveBlock(index, "up")}
-                  disabled={index === 0}
-                >
-                  ↑
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => moveBlock(index, "down")}
-                  disabled={index === blocks.length - 1}
-                >
-                  ↓
-                </Button>
-              </CardFooter>
-            )}
-          </Card>
-        ))}
-      </div>
+                </div>
+              </CardHeader>
+            </Card>
+          ))}
+        </div>
+      )}
 
       {!isAdmin && (
         <div className="mt-8 p-4 bg-muted rounded-lg text-center text-sm text-muted-foreground">
